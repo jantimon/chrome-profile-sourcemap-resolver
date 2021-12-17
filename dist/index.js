@@ -5656,216 +5656,9 @@ module.exports.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
 /***/ }),
 
 /***/ 585:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+/***/ ((module) => {
 
-"use strict";
-
-const utils_1 = __nccwpck_require__(678);
-const isAliasPattern = /^-[\da-z]+/i;
-const isFlagPattern = /^--[\w-]{2,}/;
-function typeFlag(argv, schemas) {
-    const aliasesMap = utils_1.mapAliases(schemas);
-    const flags = utils_1.createFlagsObject(schemas);
-    const unknownFlags = {};
-    const remainingArguments = [];
-    let expectingValue;
-    const setKnown = (flagName, flagSchema, flagValue) => {
-        const flagType = (typeof flagSchema === 'function'
-            ? flagSchema
-            : (utils_1.isFlagSchemaWithType(flagSchema)
-                ? flagSchema.type
-                : String));
-        flagValue = utils_1.getDefaultFromTypeWithValue(flagType, flagValue);
-        if (flagValue !== undefined && !Number.isNaN(flagValue)) {
-            flags[flagName].push(flagType(flagValue));
-        }
-        else {
-            expectingValue = (value) => {
-                flags[flagName].push(flagType(utils_1.getDefaultFromTypeWithValue(flagType, value || '')));
-                expectingValue = undefined;
-            };
-        }
-    };
-    const setUnknown = (flagName, flagValue) => {
-        if (!(flagName in unknownFlags)) {
-            unknownFlags[flagName] = [];
-        }
-        if (flagValue !== undefined) {
-            unknownFlags[flagName].push(flagValue);
-        }
-        else {
-            expectingValue = (value = true) => {
-                unknownFlags[flagName].push(value);
-                expectingValue = undefined;
-            };
-        }
-    };
-    for (let i = 0; i < argv.length; i += 1) {
-        const argvElement = argv[i];
-        if (argvElement === '--') {
-            remainingArguments.push(...argv.slice(i + 1));
-            break;
-        }
-        const isAlias = isAliasPattern.test(argvElement);
-        const isFlag = isFlagPattern.test(argvElement);
-        if (isFlag || isAlias) {
-            if (expectingValue) {
-                expectingValue();
-            }
-            const parsedFlag = utils_1.parseFlag(argvElement);
-            const { flagValue } = parsedFlag;
-            let { flagName } = parsedFlag;
-            if (isAlias) {
-                const aliases = flagName.split('');
-                for (let j = 0; j < aliases.length; j += 1) {
-                    const alias = aliases[j];
-                    const hasAlias = aliasesMap.get(alias);
-                    const isLast = j === aliases.length - 1;
-                    if (hasAlias) {
-                        setKnown(hasAlias.name, hasAlias.schema, isLast ? flagValue : true);
-                    }
-                    else {
-                        setUnknown(alias, isLast ? flagValue : true);
-                    }
-                }
-                continue;
-            }
-            let flagSchema = schemas[flagName];
-            if (!flagSchema) {
-                const camelized = utils_1.toCamelCase(flagName);
-                flagSchema = schemas[camelized];
-                if (flagSchema) {
-                    flagName = camelized;
-                }
-            }
-            if (!flagSchema) {
-                setUnknown(flagName, flagValue);
-                continue;
-            }
-            setKnown(flagName, flagSchema, flagValue);
-        }
-        else if (expectingValue) { // Not a flag, but expecting a value
-            expectingValue(argvElement);
-        }
-        else { // Unexpected value
-            remainingArguments.push(argvElement);
-        }
-    }
-    if (expectingValue) {
-        expectingValue();
-    }
-    return {
-        flags,
-        unknownFlags,
-        _: remainingArguments,
-    };
-}
-module.exports = typeFlag;
-
-
-/***/ }),
-
-/***/ 678:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.isFlagSchemaWithType = exports.getDefaultFromTypeWithValue = exports.createFlagsObject = exports.mapAliases = exports.parseFlag = exports.toCamelCase = void 0;
-const assert_1 = __importDefault(__nccwpck_require__(491));
-const kebabCasePattern = /-(\w)/g;
-const toCamelCase = (string) => string.replace(kebabCasePattern, (_, afterHyphenCharacter) => afterHyphenCharacter.toUpperCase());
-exports.toCamelCase = toCamelCase;
-const camelCasePattern = /\B([A-Z])/g;
-const toKebabCase = (string) => string.replace(camelCasePattern, '-$1').toLowerCase();
-const { stringify } = JSON;
-const { hasOwnProperty } = Object.prototype;
-const hasOwn = (object, property) => hasOwnProperty.call(object, property);
-const flagPrefixPattern = /^--?/;
-const valueDelimiterPattern = /[.:=]/;
-const parseFlag = (flagArgv) => {
-    let flagName = flagArgv.replace(flagPrefixPattern, '');
-    let flagValue;
-    const hasValueDalimiter = flagName.match(valueDelimiterPattern);
-    if (hasValueDalimiter === null || hasValueDalimiter === void 0 ? void 0 : hasValueDalimiter.index) {
-        const equalIndex = hasValueDalimiter.index;
-        flagValue = flagName.slice(equalIndex + 1);
-        flagName = flagName.slice(0, equalIndex);
-    }
-    return {
-        flagName,
-        flagValue,
-    };
-};
-exports.parseFlag = parseFlag;
-const reservedCharactersPattern = /[\s.:=]/;
-const validateFlagName = (schemas, flagName) => {
-    const errorPrefix = `Invalid flag name ${stringify(flagName)}:`;
-    assert_1.default(flagName.length > 0, `${errorPrefix} flag name cannot be empty}`);
-    assert_1.default(flagName.length !== 1, `${errorPrefix} single characters are reserved for aliases`);
-    const hasReservedCharacter = flagName.match(reservedCharactersPattern);
-    assert_1.default(!hasReservedCharacter, `${errorPrefix} flag name cannot contain the character ${stringify(hasReservedCharacter === null || hasReservedCharacter === void 0 ? void 0 : hasReservedCharacter[0])}`);
-    let checkDifferentCase;
-    if (kebabCasePattern.test(flagName)) {
-        checkDifferentCase = exports.toCamelCase(flagName);
-    }
-    else if (camelCasePattern.test(flagName)) {
-        checkDifferentCase = toKebabCase(flagName);
-    }
-    if (checkDifferentCase) {
-        assert_1.default(!hasOwn(schemas, checkDifferentCase), `${errorPrefix} collides with flag ${stringify(checkDifferentCase)}`);
-    }
-};
-function mapAliases(schemas) {
-    const aliases = new Map();
-    for (const name in schemas) {
-        if (!hasOwn(schemas, name)) {
-            continue;
-        }
-        validateFlagName(schemas, name);
-        const schema = schemas[name];
-        if (schema && typeof schema === 'object') {
-            const { alias } = schema;
-            if (alias) {
-                assert_1.default(alias.length > 0, `Invalid flag alias ${stringify(name)}: flag alias cannot be empty`);
-                assert_1.default(alias.length === 1, `Invalid flag alias ${stringify(name)}: flag aliases can only be a single-character`);
-                assert_1.default(!aliases.has(alias), `Flag collision: Alias "${alias}" is already used`);
-                aliases.set(alias, {
-                    name,
-                    schema,
-                });
-            }
-        }
-    }
-    return aliases;
-}
-exports.mapAliases = mapAliases;
-const createFlagsObject = (schema) => {
-    const flags = {};
-    for (const flag in schema) {
-        if (hasOwn(schema, flag)) {
-            flags[flag] = [];
-        }
-    }
-    return flags;
-};
-exports.createFlagsObject = createFlagsObject;
-const getDefaultFromTypeWithValue = (typeFunction, value) => {
-    if (typeFunction === Number && value === '') {
-        return Number.NaN;
-    }
-    if (typeFunction === Boolean) {
-        return (value !== 'false');
-    }
-    return value;
-};
-exports.getDefaultFromTypeWithValue = getDefaultFromTypeWithValue;
-const isFlagSchemaWithType = (schema) => (('type' in schema)
-    && (typeof schema.type === 'function'));
-exports.isFlagSchemaWithType = isFlagSchemaWithType;
+var m=Object.defineProperty;var j=Object.getOwnPropertyDescriptor;var K=Object.getOwnPropertyNames;var _=Object.prototype.hasOwnProperty;var D=t=>m(t,"__esModule",{value:!0});var M=(t,e)=>{for(var n in e)m(t,n,{get:e[n],enumerable:!0})},R=(t,e,n,r)=>{if(e&&typeof e=="object"||typeof e=="function")for(let s of K(e))!_.call(t,s)&&(n||s!=="default")&&m(t,s,{get:()=>e[s],enumerable:!(r=j(e,s))||r.enumerable});return t};var z=(t=>(e,n)=>t&&t.get(e)||(n=R(D({}),e,1),t&&t.set(e,n),n))(typeof WeakMap!="undefined"?new WeakMap:0);var Q={};M(Q,{default:()=>I});var P=/-(\w)/g,A=t=>t.replace(P,(e,n)=>n.toUpperCase()),$=/\B([A-Z])/g,B=t=>t.replace($,"-$1").toLowerCase(),{stringify:u}=JSON,{hasOwnProperty:L}=Object.prototype,F=(t,e)=>L.call(t,e),U=/^--?/,W=/[.:=]/,C=t=>{let e=t.replace(U,""),n,r=e.match(W);if(r==null?void 0:r.index){let s=r.index;n=e.slice(s+1),e=e.slice(0,s)}return{flagName:e,flagValue:n}},q=/[\s.:=]/,J=(t,e)=>{let n=`Invalid flag name ${u(e)}:`;if(e.length===0)throw new Error(`${n} flag name cannot be empty}`);if(e.length===1)throw new Error(`${n} single characters are reserved for aliases`);let r=e.match(q);if(r)throw new Error(`${n} flag name cannot contain the character ${u(r==null?void 0:r[0])}`);let s;if(P.test(e)?s=A(e):$.test(e)&&(s=B(e)),s&&F(t,s))throw new Error(`${n} collides with flag ${u(s)}`)};function O(t){let e=new Map;for(let n in t){if(!F(t,n))continue;J(t,n);let r=t[n];if(r&&typeof r=="object"){let{alias:s}=r;if(typeof s=="string"){if(s.length===0)throw new Error(`Invalid flag alias ${u(n)}: flag alias cannot be empty`);if(s.length>1)throw new Error(`Invalid flag alias ${u(n)}: flag aliases can only be a single-character`);if(e.has(s))throw new Error(`Flag collision: Alias "${s}" is already used`);e.set(s,{name:n,schema:r})}}}return e}var Z=t=>!t||typeof t=="function"?!1:Array.isArray(t)||Array.isArray(t.type),E=t=>{let e={};for(let n in t)F(t,n)&&(e[n]=Z(t[n])?[]:void 0);return e},h=(t,e)=>t===Number&&e===""?Number.NaN:t===Boolean?e!=="false":e,v=(t,e)=>{for(let n in t){if(!F(t,n))continue;let r=t[n];if(!r)continue;let s=e[n];if(!(s!==void 0&&!(Array.isArray(s)&&s.length===0))&&"default"in r){let f=r.default;typeof f=="function"&&(f=f()),e[n]=f}}},x=(t,e)=>{if(!e)throw new Error(`Missing type on flag "${t}"`);return typeof e=="function"?e:Array.isArray(e)?e[0]:x(t,e.type)};var G=/^-[\da-z]+/i,H=/^--[\w-]{2,}/;function I(t,e=process.argv.slice(2)){let n=O(t),r={flags:E(t),unknownFlags:{},_:[]},s,f=(a,o,i)=>{let l=x(a,o);i=h(l,i),i!==void 0&&!Number.isNaN(i)?Array.isArray(r.flags[a])?r.flags[a].push(l(i)):r.flags[a]=l(i):s=g=>{Array.isArray(r.flags[a])?r.flags[a].push(l(h(l,g||""))):r.flags[a]=l(h(l,g||"")),s=void 0}},S=(a,o)=>{a in r.unknownFlags||(r.unknownFlags[a]=[]),o!==void 0?r.unknownFlags[a].push(o):s=(i=!0)=>{r.unknownFlags[a].push(i),s=void 0}};for(let a=0;a<e.length;a+=1){let o=e[a];if(o==="--"){r._.push(...e.slice(a+1));break}let i=G.test(o);if(H.test(o)||i){s&&s();let g=C(o),{flagValue:d}=g,{flagName:c}=g;if(i){for(let y=0;y<c.length;y+=1){let T=c[y],w=n.get(T),b=y===c.length-1;w?f(w.name,w.schema,b?d:!0):S(T,b?d:!0)}continue}let p=t[c];if(!p){let y=A(c);p=t[y],p&&(c=y)}if(!p){S(c,d);continue}f(c,p,d)}else s?s(o):r._.push(o)}return s&&s(),v(t,r.flags),r}module.exports=z(Q);0&&(0);
 
 
 /***/ }),
@@ -8161,14 +7954,6 @@ module.exports = eval("require")("encoding");
 
 /***/ }),
 
-/***/ 491:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("assert");
-
-/***/ }),
-
 /***/ 147:
 /***/ ((module) => {
 
@@ -8279,7 +8064,7 @@ module.exports = JSON.parse('{"Ly":{"chrome-profile-sourcemap-resolver":"./cli.j
 /******/ 		// Execute the module function
 /******/ 		var threw = true;
 /******/ 		try {
-/******/ 			__webpack_modules__[moduleId].call(module.exports, module, module.exports, __nccwpck_require__);
+/******/ 			__webpack_modules__[moduleId](module, module.exports, __nccwpck_require__);
 /******/ 			threw = false;
 /******/ 		} finally {
 /******/ 			if(threw) delete __webpack_module_cache__[moduleId];
@@ -8302,11 +8087,11 @@ var __webpack_exports__ = {};
 const {
   loadProfileWithAppliedSourceMaps,
 } = __nccwpck_require__(969);
-const typeFlag = __nccwpck_require__(585);
+const typeFlag = (__nccwpck_require__(585)["default"]);
 const fs = __nccwpck_require__(147);
 const path = __nccwpck_require__(17);
 
-const parsed = typeFlag(process.argv.slice(2), {
+const parsed = typeFlag({
   nodeModules: String,
 
   help: Boolean,
@@ -8329,7 +8114,7 @@ const exitAssert = (value, msg) => {
   }
 };
 
-if (parsed._.length === 0 || parsed._[0] === "help" || parsed.flags.help[0]) {
+if (parsed._.length === 0 || parsed._[0] === "help" || parsed.flags.help) {
   const cliName = Object.keys((__nccwpck_require__(598)/* .bin */ .Ly))[0];
   console.log(`Usage: ${cliName} [options] fileName
 
@@ -8344,14 +8129,14 @@ exitAssert(fileName, "Please specify the path to your profile.");
 exitAssert(fs.existsSync(fileName), "The profile does not exist");
 
 const outFileName =
-  parsed.flags.out[0] || fileName.replace(/(\.json|$)/i, ".mapped$1");
+  parsed.flags.out || fileName.replace(/(\.json|$)/i, ".mapped$1");
 
-console.log(`🔬 Searching for Stacktraces inside "${path.basename(fileName)}"`);
-loadProfileWithAppliedSourceMaps(fileName, parsed.flags.nodeModules[0]).then(
+console.log(` 🔬  Searching for Stacktraces inside "${path.basename(fileName)}"`);
+loadProfileWithAppliedSourceMaps(fileName, parsed.flags.nodeModules || undefined).then(
   (result) => {
     const json = JSON.stringify(result, null, 2);
     fs.writeFileSync(outFileName, json, "utf-8");
-    console.log(`🚀 Written to "${path.basename(outFileName)}"`);
+    console.log(` 🚀  Written to "${path.basename(outFileName)}"`);
   }
 );
 

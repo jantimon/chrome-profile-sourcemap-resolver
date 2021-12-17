@@ -1,6 +1,6 @@
 {
   "name": "chrome-profile-sourcemap-resolver",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Apply sourcemaps for a recorded chrome profile",
   "homepage": "https://github.com/jantimon/chrome-profile-sourcemap-resolver#readme",
   "scripts": {
@@ -13,7 +13,10 @@
   "bin": {
     "chrome-profile-sourcemap-resolver": "./cli.js"
   },
-  "keywords": ["chrome", "profile"],
+  "keywords": [
+    "chrome",
+    "profile"
+  ],
   "author": "Jan Nicklas",
   "license": "MIT",
   "devDependencies": {
@@ -22,6 +25,6 @@
     "node-fetch": "^2.6.5",
     "source-map": "^0.7.3",
     "source-map-resolve": "^0.6.0",
-    "type-flag": "^1.0.0"
+    "type-flag": "^2.0.0"
   }
 }
