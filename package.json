@@ -1,0 +1,26 @@
+{
+  "name": "chrome-profile-sourcemap-resolver",
+  "version": "1.0.3",
+  "description": "Apply sourcemaps for a recorded chrome profile",
+  "scripts": {
+    "build": "ncc build src/index.js -o dist/"
+  },
+  "files": [
+    "cli.js",
+    "dist/"
+  ],
+  "bin": {
+    "chrome-profile-sourcemap-resolver": "./cli.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node-fetch": "^3.0.3",
+    "@vercel/ncc": "^0.33.0",
+    "node-fetch": "^2.6.5",
+    "source-map": "^0.7.3",
+    "source-map-resolve": "^0.6.0",
+    "type-flag": "^1.0.0"
+  }
+}
