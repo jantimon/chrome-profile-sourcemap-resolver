@@ -1,25 +1,24 @@
 /// @ts-check
-const fs = require("fs/promises");
-const path = require("path");
-const { resolveOriginalLocations } = require("./resolveOriginalLocations");
+import fs from "fs/promises";
+import path from "path";
+import { resolveOriginalLocations } from "./resolveOriginalLocations.mjs";
 
 /** @typedef {{ columnNumber:number, lineNumber: number, url: string, functionName: string }} Tracable */
 
 /** @typedef {import('./traceTypes').Trace | import('./traceTypes').Trace['traceEvents']} Profile */
 
 /**
- * Opens a Google Trace Format json file and resolves all sourcemaps
+ * Resolves all Google Trace Format json file and resolves all sourcemaps
  * https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/edit#
  * 
- * @param {string} pathToProfile
+ * Warning this function will modify the given profile!
+ * 
+ * @template {Profile} TProfile
+ * @param {TProfile} profile
  * @param {string} [nodeModulesPath]
- * @returns {Promise<Profile>}
+ * @returns {Promise<TProfile>}
  */
-async function loadProfileWithAppliedSourceMaps(pathToProfile, nodeModulesPath) {
-  // Read the file inside this function so we can mutate the profile without side effects
-  const input = await fs.readFile(pathToProfile, "utf-8");
-  /** @type {Profile} */
-  const profile = JSON.parse(input);
+export async function applySourceMapsForProfile(profile, nodeModulesPath) {
 
   /** @type {Tracable[]} */
   const traces = [];
@@ -190,5 +189,3 @@ function isTrace(trace) {
     typeof trace.columnNumber === "number"
   );
 }
-
-module.exports = { loadProfileWithAppliedSourceMaps }

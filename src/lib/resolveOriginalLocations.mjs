@@ -1,9 +1,9 @@
 /// @ts-check
-const sourceMapResolve = require("source-map-resolve");
-const { SourceMapConsumer } = require("source-map");
-const fetch = require("node-fetch");
-const https = require("https");
-const path = require("path");
+import sourceMapResolve from "source-map-resolve";
+import { SourceMapConsumer } from "source-map";
+import fetch from "node-fetch";
+import https from "https";
+import path from "path";
 
 const agent = new https.Agent({
   rejectUnauthorized: false,
@@ -18,7 +18,8 @@ const emptyMap = '{"version":3,"sources":[],"names":[],"mappings":"","sourcesCon
  * @returns {Promise<string>}
  */
 const fetcher = async (url) => {
-  const request = await fetch(url, { agent });
+  const isomorphicFetch = typeof fetch === "function" ? fetch: (await import("node-fetch")).default;
+  const request = await isomorphicFetch(url, { agent });
   const content = await request.text();
   return content;
 };
@@ -26,11 +27,25 @@ const fetcher = async (url) => {
 /**
  * Returns the resolved sourcemap for the given url
  * @param {string} url
- * @param {(url: string) => Promise<string>} urlLoader
+ * @param {(url: string) => Promise<string>} [fileLoader]
  *
  * @returns {Promise<undefined | { map: import("source-map").RawSourceMap }>}
  */
-async function getSourceMap(url, urlLoader) {
+async function getSourceMap(url, fileLoader) {
+  /** @param {string} assetUrl */
+  const urlLoader = async (assetUrl) => {
+    if (/data\:[^,]*base64,/.test(url)) {
+      return atob(url.replace(/data\:[^,]*base64,/, ''));
+    }
+    if (url.startsWith("//") || /(https?|ftp|file)\:\/\//.test(url) ) {
+      return fetcher(assetUrl);
+    }
+    if (fileLoader) {
+      return fileLoader(assetUrl);
+    }
+    console.warn(`Could not resolve "${url}".`);
+    return "";
+  };
   const content = await urlLoader(url);
   if (!content) {
     return;
@@ -71,15 +86,15 @@ async function getSourceMap(url, urlLoader) {
  *
  * @param {string} url
  * @param {{line: number, column: number}[]} locations 
- * @param {(url: string) => Promise<string>} urlLoader
+ * @param {(url: string) => Promise<string>} [fileLoader]
  */
-const resolveOriginalLocations = async (url, locations, urlLoader = fetcher) => {
+export const resolveOriginalLocations = async (url, locations, fileLoader) => {
   /** @type {{source: string, line: number, column: number, name: string}[]} */
   let resolvedLocations = [];
   if (locations.length === 0) {
     return resolvedLocations;
   }
-  const { map } = (await getSourceMap(url, urlLoader)) || { map: undefined };
+  const { map } = (await getSourceMap(url, fileLoader)) || { map: undefined };
   if (!map) {
     return resolvedLocations;
   }
@@ -111,5 +126,3 @@ const resolveOriginalLocations = async (url, locations, urlLoader = fetcher) => 
 
   return resolvedLocations;
 };
-
-module.exports = { resolveOriginalLocations };

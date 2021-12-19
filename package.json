@@ -1,17 +1,19 @@
 {
   "name": "chrome-profile-sourcemap-resolver",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "description": "Apply sourcemaps for a recorded chrome profile",
   "homepage": "https://github.com/jantimon/chrome-profile-sourcemap-resolver#readme",
   "scripts": {
-    "build": "ncc build src/index.js -o dist/"
+    "build": "rimraf dist/ && ncc build src/index.mjs -o dist/"
   },
+  "type": "module",
+  "main": "dist/index.mjs",
   "files": [
-    "cli.js",
+    "cli.mjs",
     "dist/"
   ],
   "bin": {
-    "chrome-profile-sourcemap-resolver": "./cli.js"
+    "chrome-profile-sourcemap-resolver": "./cli.mjs"
   },
   "keywords": [
     "chrome",
@@ -23,6 +25,7 @@
     "@types/node-fetch": "^3.0.3",
     "@vercel/ncc": "^0.33.0",
     "node-fetch": "^2.6.5",
+    "rimraf": "^3.0.2",
     "source-map": "^0.7.3",
     "source-map-resolve": "^0.6.0",
     "type-flag": "^2.0.0"
