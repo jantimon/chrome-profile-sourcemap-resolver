@@ -8023,50 +8023,58 @@ const resolveOriginalLocations = async (url, locations, fileLoader) => {
 /**
  * Resolves all Google Trace Format json file and resolves all sourcemaps
  * https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/edit#
- * 
+ *
  * Warning this function will modify the given profile!
- * 
+ *
  * @template {Profile} TProfile
  * @param {TProfile} profile
  * @param {string} [nodeModulesPath]
  * @returns {Promise<TProfile>}
  */
 async function applySourceMapsForProfile(profile, nodeModulesPath) {
-
   /** @type {Tracable[]} */
   const traces = [];
 
-  const traceEvents = Array.isArray(profile) ? profile : profile.traceEvents;
+  /** @type {import('./traceTypes').Trace['traceEvents']} */
+  const traceEvents =
+    "traceEvents" in profile
+      ? profile.traceEvents
+      : Array.isArray(profile)
+      ? profile
+      : [];
 
   // Search the profile for StackTrace entries
   traceEvents.forEach((event) => {
-    if (!event.args.data) {
-      return;
-    }
-    const data = event.args.data;
+    const dataArgs = /** @type {const} */ (["data", "beginData"]);
+    dataArgs.forEach((dataName) => {
+      const data = dataName in event.args && event.args[dataName];
+      if (!data) {
+        return;
+      }
 
-    if (data.stackTrace) {
-      const { stackTrace } = data;
-      stackTrace.forEach((trace) => {
-        if (isTrace(trace)) {
-          traces.push(trace);
-        }
-      });
-    }
+      if (data.stackTrace) {
+        const { stackTrace } = data;
+        stackTrace.forEach((trace) => {
+          if (isTrace(trace)) {
+            traces.push(trace);
+          }
+        });
+      }
 
-    if (data.cpuProfile && data.cpuProfile.nodes) {
-      const { nodes } = data.cpuProfile;
-      nodes.forEach((node) => {
-        const trace = node.callFrame;
-        if (isTrace(trace)) {
-          traces.push(trace);
-        }
-      });
-    }
+      if ("cpuProfile" in data && data.cpuProfile && data.cpuProfile.nodes) {
+        const { nodes } = data.cpuProfile;
+        nodes.forEach((node) => {
+          const trace = node.callFrame;
+          if (isTrace(trace)) {
+            traces.push(trace);
+          }
+        });
+      }
 
-    if (isTrace(data)) {
-      traces.push(data);
-    }
+      if (isTrace(data)) {
+        traces.push(data);
+      }
+    });
   });
 
   await resolveTracesForUrlAssets(traces);
@@ -8136,12 +8144,12 @@ async function resolveTracesForNodeModules(traces, nodeModulesPath) {
   const nodeModuleLoader = async (url) => {
     const resolvedUrl = external_path_.resolve(nodeModulesPath, url);
     try {
-      return await promises_namespaceObject.readFile(resolvedUrl, 'utf-8');
-    } catch(e) {
-      console.warn("Could not read ", resolvedUrl)
+      return await promises_namespaceObject.readFile(resolvedUrl, "utf-8");
+    } catch (e) {
+      console.warn("Could not read ", resolvedUrl);
     }
     return "";
-  }
+  };
   /** @type {Map<string, Tracable[]>} */
   const urlTraceMapping = new Map();
   traces.forEach((trace) => {
