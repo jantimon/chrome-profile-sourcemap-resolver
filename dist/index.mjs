@@ -8213,7 +8213,7 @@ const runCli = async () => {
   const typeFlag = (await __nccwpck_require__.e(/* import() */ 597).then(__nccwpck_require__.bind(__nccwpck_require__, 597))).default;
   const fs = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 147, 19));
   const path = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 17, 19));
-  
+
   const parsed = typeFlag({
     nodeModules: String,
 
@@ -8226,7 +8226,8 @@ const runCli = async () => {
   });
 
   if (parsed._.length === 0 || parsed._[0] === "help" || parsed.flags.help) {
-    const cliName = Object.keys(require("../package.json").bin)[0];
+    const packageJson = await __nccwpck_require__.e(/* import() */ 147).then(__nccwpck_require__.t.bind(__nccwpck_require__, 598, 17));
+    const cliName = Object.keys(packageJson.default.bin)[0];
     console.log(`Usage: ${cliName} [options] fileName
 
 Options
