@@ -99,8 +99,8 @@ async function resolveTracesForUrlAssets(traces) {
       resolveOriginalLocations(
         url,
         traces.map((traceable) => ({
-          column: Math.max(0, traceable.columnNumber - 1),
-          line: Math.max(1, traceable.lineNumber),
+          column: traceable.columnNumber,
+          line: traceable.lineNumber
         }))
       ).then((resolvedLocations) => {
         resolvedLocations.forEach((resolvedLocation, i) => {
