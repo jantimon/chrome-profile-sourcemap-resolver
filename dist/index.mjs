@@ -20,13 +20,13 @@ module.exports = atob.atob = atob;
 
 
 var token = '%[a-f0-9]{2}';
-var singleMatcher = new RegExp(token, 'gi');
+var singleMatcher = new RegExp('(' + token + ')|([^%]+?)', 'gi');
 var multiMatcher = new RegExp('(' + token + ')+', 'gi');
 
 function decodeComponents(components, split) {
 	try {
 		// Try to decode the entire string first
-		return decodeURIComponent(components.join(''));
+		return [decodeURIComponent(components.join(''))];
 	} catch (err) {
 		// Do nothing
 	}
@@ -48,12 +48,12 @@ function decode(input) {
 	try {
 		return decodeURIComponent(input);
 	} catch (err) {
-		var tokens = input.match(singleMatcher);
+		var tokens = input.match(singleMatcher) || [];
 
 		for (var i = 1; i < tokens.length; i++) {
 			input = decodeComponents(tokens, i).join('');
 
-			tokens = input.match(singleMatcher);
+			tokens = input.match(singleMatcher) || [];
 		}
 
 		return input;
@@ -1486,10 +1486,6 @@ function getNodeRequestOptions(request) {
 		agent = agent(parsedURL);
 	}
 
-	if (!headers.has('Connection') && !agent) {
-		headers.set('Connection', 'close');
-	}
-
 	// HTTP-network fetch step 4.2
 	// chunked encoding is handled by Node.js
 
@@ -1526,9 +1522,31 @@ AbortError.prototype = Object.create(Error.prototype);
 AbortError.prototype.constructor = AbortError;
 AbortError.prototype.name = 'AbortError';
 
+const URL$1 = Url.URL || whatwgUrl.URL;
+
 // fix an issue where "PassThrough", "resolve" aren't a named export for node <10
 const PassThrough$1 = Stream.PassThrough;
-const resolve_url = Url.resolve;
+
+const isDomainOrSubdomain = function isDomainOrSubdomain(destination, original) {
+	const orig = new URL$1(original).hostname;
+	const dest = new URL$1(destination).hostname;
+
+	return orig === dest || orig[orig.length - dest.length - 1] === '.' && orig.endsWith(dest);
+};
+
+/**
+ * isSameProtocol reports whether the two provided URLs use the same protocol.
+ *
+ * Both domains must already be in canonical form.
+ * @param {string|URL} original
+ * @param {string|URL} destination
+ */
+const isSameProtocol = function isSameProtocol(destination, original) {
+	const orig = new URL$1(original).protocol;
+	const dest = new URL$1(destination).protocol;
+
+	return orig === dest;
+};
 
 /**
  * Fetch function
@@ -1561,7 +1579,7 @@ function fetch(url, opts) {
 			let error = new AbortError('The user aborted a request.');
 			reject(error);
 			if (request.body && request.body instanceof Stream.Readable) {
-				request.body.destroy(error);
+				destroyStream(request.body, error);
 			}
 			if (!response || !response.body) return;
 			response.body.emit('error', error);
@@ -1602,8 +1620,42 @@ function fetch(url, opts) {
 
 		req.on('error', function (err) {
 			reject(new FetchError(`request to ${request.url} failed, reason: ${err.message}`, 'system', err));
+
+			if (response && response.body) {
+				destroyStream(response.body, err);
+			}
+
 			finalize();
 		});
+
+		fixResponseChunkedTransferBadEnding(req, function (err) {
+			if (signal && signal.aborted) {
+				return;
+			}
+
+			if (response && response.body) {
+				destroyStream(response.body, err);
+			}
+		});
+
+		/* c8 ignore next 18 */
+		if (parseInt(process.version.substring(1)) < 14) {
+			// Before Node.js 14, pipeline() does not fully support async iterators and does not always
+			// properly handle when the socket close/end events are out of order.
+			req.on('socket', function (s) {
+				s.addListener('close', function (hadError) {
+					// if a data listener is still present we didn't end cleanly
+					const hasDataListener = s.listenerCount('data') > 0;
+
+					// if end happened before close but the socket didn't emit an error, do it now
+					if (response && hasDataListener && !hadError && !(signal && signal.aborted)) {
+						const err = new Error('Premature close');
+						err.code = 'ERR_STREAM_PREMATURE_CLOSE';
+						response.body.emit('error', err);
+					}
+				});
+			});
+		}
 
 		req.on('response', function (res) {
 			clearTimeout(reqTimeout);
@@ -1616,7 +1668,19 @@ function fetch(url, opts) {
 				const location = headers.get('Location');
 
 				// HTTP fetch step 5.3
-				const locationURL = location === null ? null : resolve_url(request.url, location);
+				let locationURL = null;
+				try {
+					locationURL = location === null ? null : new URL$1(location, request.url).toString();
+				} catch (err) {
+					// error here can only be invalid URL in Location: header
+					// do not throw when options.redirect == manual
+					// let the user extract the errorneous redirect URL
+					if (request.redirect !== 'manual') {
+						reject(new FetchError(`uri requested responds with an invalid redirect URL: ${location}`, 'invalid-redirect'));
+						finalize();
+						return;
+					}
+				}
 
 				// HTTP fetch step 5.5
 				switch (request.redirect) {
@@ -1663,6 +1727,12 @@ function fetch(url, opts) {
 							timeout: request.timeout,
 							size: request.size
 						};
+
+						if (!isDomainOrSubdomain(request.url, locationURL) || !isSameProtocol(request.url, locationURL)) {
+							for (const name of ['authorization', 'www-authenticate', 'cookie', 'cookie2']) {
+								requestOpts.headers.delete(name);
+							}
+						}
 
 						// HTTP-redirect fetch step 9
 						if (res.statusCode !== 303 && request.body && getTotalBytes(request) === null) {
@@ -1751,6 +1821,13 @@ function fetch(url, opts) {
 					response = new Response(body, response_options);
 					resolve(response);
 				});
+				raw.on('end', function () {
+					// some old IIS servers return zero-length OK deflate responses, so 'data' is never emitted.
+					if (!response) {
+						response = new Response(body, response_options);
+						resolve(response);
+					}
+				});
 				return;
 			}
 
@@ -1770,6 +1847,44 @@ function fetch(url, opts) {
 		writeToStream(req, request);
 	});
 }
+function fixResponseChunkedTransferBadEnding(request, errorCallback) {
+	let socket;
+
+	request.on('socket', function (s) {
+		socket = s;
+	});
+
+	request.on('response', function (response) {
+		const headers = response.headers;
+
+		if (headers['transfer-encoding'] === 'chunked' && !headers['content-length']) {
+			response.once('close', function (hadError) {
+				// tests for socket presence, as in some situations the
+				// the 'socket' event is not triggered for the request
+				// (happens in deno), avoids `TypeError`
+				// if a data listener is still present we didn't end cleanly
+				const hasDataListener = socket && socket.listenerCount('data') > 0;
+
+				if (hasDataListener && !hadError) {
+					const err = new Error('Premature close');
+					err.code = 'ERR_STREAM_PREMATURE_CLOSE';
+					errorCallback(err);
+				}
+			});
+		}
+	});
+}
+
+function destroyStream(stream, err) {
+	if (stream.destroy) {
+		stream.destroy(err);
+	} else {
+		// node < 8
+		stream.emit('error', err);
+		stream.end();
+	}
+}
+
 /**
  * Redirect code matching
  *
@@ -1790,6 +1905,7 @@ exports.Headers = Headers;
 exports.Request = Request;
 exports.Response = Response;
 exports.FetchError = FetchError;
+exports.AbortError = AbortError;
 
 
 /***/ }),
@@ -2632,23 +2748,32 @@ exports.H = MappingList;
 /***/ 587:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-if (typeof fetch === "function") {
+/* Determine browser vs node environment by testing the default top level context. Solution courtesy of: https://stackoverflow.com/questions/17575790/environment-detection-node-js-or-browser */
+const isBrowserEnvironment = (function() {
+    // eslint-disable-next-line no-undef
+    return (typeof window !== "undefined") && (this === window);
+}).call();
+
+if (isBrowserEnvironment) {
   // Web version of reading a wasm file into an array buffer.
 
-  let mappingsWasmUrl = null;
+  let mappingsWasm = null;
 
   module.exports = function readWasm() {
-    if (typeof mappingsWasmUrl !== "string") {
-      throw new Error("You must provide the URL of lib/mappings.wasm by calling " +
-                      "SourceMapConsumer.initialize({ 'lib/mappings.wasm': ... }) " +
-                      "before using SourceMapConsumer");
+    if (typeof mappingsWasm === "string") {
+      return fetch(mappingsWasm)
+        .then(response => response.arrayBuffer());
     }
-
-    return fetch(mappingsWasmUrl)
-      .then(response => response.arrayBuffer());
+    if (mappingsWasm instanceof ArrayBuffer) {
+      return Promise.resolve(mappingsWasm);
+    }
+    throw new Error("You must provide the string URL or ArrayBuffer contents " +
+                    "of lib/mappings.wasm by calling " +
+                    "SourceMapConsumer.initialize({ 'lib/mappings.wasm': ... }) " +
+                    "before using SourceMapConsumer");
   };
 
-  module.exports.initialize = url => mappingsWasmUrl = url;
+  module.exports.initialize = input => mappingsWasm = input;
 } else {
   // Node version of reading a wasm file into an array buffer.
   const fs = __nccwpck_require__(147);
@@ -2746,30 +2871,13 @@ class SourceMapConsumer {
    * console.log(xSquared);
    * ```
    */
-  static with(rawSourceMap, sourceMapUrl, f) {
-    // Note: The `acorn` version that `webpack` currently depends on doesn't
-    // support `async` functions, and the nodes that we support don't all have
-    // `.finally`. Therefore, this is written a bit more convolutedly than it
-    // should really be.
-
-    let consumer = null;
-    const promise = new SourceMapConsumer(rawSourceMap, sourceMapUrl);
-    return promise
-      .then(c => {
-        consumer = c;
-        return f(c);
-      })
-      .then(x => {
-        if (consumer) {
-          consumer.destroy();
-        }
-        return x;
-      }, e => {
-        if (consumer) {
-          consumer.destroy();
-        }
-        throw e;
-      });
+  static async with(rawSourceMap, sourceMapUrl, f) {
+    const consumer = await new SourceMapConsumer(rawSourceMap, sourceMapUrl);
+    try {
+      return await f(consumer);
+    } finally {
+      consumer.destroy();
+    }
   }
 
   /**
@@ -7989,8 +8097,8 @@ const resolveOriginalLocations = async (url, locations, fileLoader) => {
 
     locations.forEach(({ column, line }) => {
       const originalPosition = consumer.originalPositionFor({
-        line: line || 1,
-        column: Math.max(0, column - 1),
+        line: (line ?? 0) + 1,
+        column: column ?? 0,
       });
       let source = originalPosition.source || "";
       const isRelative = source.startsWith("..");
@@ -8000,6 +8108,7 @@ const resolveOriginalLocations = async (url, locations, fileLoader) => {
       if (isRelative) {
         source = external_path_.resolve(external_path_.dirname(url), source);
       }
+      originalPosition.line = originalPosition.line == null ? null : originalPosition.line -1
       resolvedLocations.push({
         ...originalPosition,
         source,
@@ -8112,8 +8221,8 @@ async function resolveTracesForUrlAssets(traces) {
       resolveOriginalLocations(
         url,
         traces.map((traceable) => ({
-          column: Math.max(0, traceable.columnNumber - 1),
-          line: Math.max(1, traceable.lineNumber),
+          column: traceable.columnNumber,
+          line: traceable.lineNumber
         }))
       ).then((resolvedLocations) => {
         resolvedLocations.forEach((resolvedLocation, i) => {
