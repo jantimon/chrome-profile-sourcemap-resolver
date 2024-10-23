@@ -106,8 +106,8 @@ export const resolveOriginalLocations = async (url, locations, fileLoader) => {
 
     locations.forEach(({ column, line }) => {
       const originalPosition = consumer.originalPositionFor({
-        line: line || 1,
-        column: Math.max(0, column - 1),
+        line: (line ?? 0) + 1,
+        column: column ?? 0,
       });
       let source = originalPosition.source || "";
       const isRelative = source.startsWith("..");
@@ -117,6 +117,7 @@ export const resolveOriginalLocations = async (url, locations, fileLoader) => {
       if (isRelative) {
         source = path.resolve(path.dirname(url), source);
       }
+      originalPosition.line = originalPosition.line == null ? null : originalPosition.line -1
       resolvedLocations.push({
         ...originalPosition,
         source,
